@@ -5,10 +5,16 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { connectDB, getMongoStatus } = require("./config/db");
+const Admin = require("./models/Admin");
+const Enquiry = require("./models/Enquiry");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "yashin_facilities_jwt_secret_key_2026";
+
+// Connect to MongoDB
+connectDB();
 
 app.use(cors());
 app.use(express.json());
@@ -34,7 +40,8 @@ function authenticateToken(req, res, next) {
   });
 }
 
-function getAdmins() {
+// JSON Fallback Helpers
+function getAdminsFromFile() {
   try {
     if (fs.existsSync(ADMIN_FILE)) {
       return JSON.parse(fs.readFileSync(ADMIN_FILE, "utf8"));
@@ -45,20 +52,22 @@ function getAdmins() {
   }
 }
 
-function saveAdmins(data) {
+function saveAdminsToFile(data) {
   fs.writeFileSync(ADMIN_FILE, JSON.stringify(data, null, 2));
 }
 
-function getEnquiries() {
+function getEnquiriesFromFile() {
   try {
-    const raw = fs.readFileSync(DATA_FILE, "utf8");
-    return JSON.parse(raw);
+    if (fs.existsSync(DATA_FILE)) {
+      return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    }
+    return [];
   } catch (e) {
     return [];
   }
 }
 
-function saveEnquiries(data) {
+function saveEnquiriesToFile(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
@@ -69,125 +78,166 @@ app.post("/api/admin/login", async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
-    return res.status(400).json({ error: "Please provide both username and password." });
+    return res.status(400).json({ error: "Username and password are required" });
   }
 
-  const admins = getAdmins();
-  const admin = admins.find(
-    (a) =>
-      a.username.toLowerCase() === username.trim().toLowerCase() ||
-      a.email.toLowerCase() === username.trim().toLowerCase()
-  );
-
-  if (!admin) {
-    return res.status(401).json({ error: "Invalid username or password." });
-  }
-
-  const isMatch = await bcrypt.compare(password, admin.password);
-  if (!isMatch) {
-    return res.status(401).json({ error: "Invalid username or password." });
-  }
-
-  const token = jwt.sign(
-    { id: admin.id, username: admin.username, email: admin.email, role: admin.role },
-    JWT_SECRET,
-    { expiresIn: "24h" }
-  );
-
-  res.json({
-    message: "Login successful",
-    token,
-    admin: {
-      id: admin.id,
-      username: admin.username,
-      email: admin.email,
-      role: admin.role
+  try {
+    let admin = null;
+    if (getMongoStatus()) {
+      admin = await Admin.findOne({ username });
     }
-  });
+
+    if (!admin) {
+      const admins = getAdminsFromFile();
+      admin = admins.find((a) => a.username.toLowerCase() === username.toLowerCase());
+    }
+
+    if (!admin) {
+      return res.status(401).json({ error: "Invalid username or password" });
+    }
+
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: "Invalid username or password" });
+    }
+
+    const token = jwt.sign(
+      {
+        id: admin._id || admin.id,
+        username: admin.username,
+        email: admin.email,
+        role: admin.role || "Super Admin"
+      },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      message: "Login successful",
+      token,
+      admin: {
+        id: admin._id || admin.id,
+        username: admin.username,
+        email: admin.email,
+        role: admin.role || "Super Admin"
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Server error during login" });
+  }
 });
 
-// 2. Change Password Route (Protected)
+// 2. Change Admin Password (JWT Protected)
 app.post("/api/admin/change-password", authenticateToken, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
   if (!currentPassword || !newPassword) {
-    return res.status(400).json({ error: "Current password and new password are required." });
+    return res.status(400).json({ error: "Both current password and new password are required" });
   }
 
   if (newPassword.length < 6) {
-    return res.status(400).json({ error: "New password must be at least 6 characters long." });
+    return res.status(400).json({ error: "New password must be at least 6 characters long" });
   }
 
-  const admins = getAdmins();
-  const adminIndex = admins.findIndex((a) => a.id === req.user.id || a.username === req.user.username);
+  try {
+    const adminUsername = req.user.username;
+    let admin = null;
 
-  if (adminIndex === -1) {
-    return res.status(404).json({ error: "Admin profile not found." });
+    if (getMongoStatus()) {
+      admin = await Admin.findOne({ username: adminUsername });
+    }
+
+    const admins = getAdminsFromFile();
+    const fileAdminIndex = admins.findIndex((a) => a.username.toLowerCase() === adminUsername.toLowerCase());
+
+    const targetAdmin = admin || (fileAdminIndex !== -1 ? admins[fileAdminIndex] : null);
+
+    if (!targetAdmin) {
+      return res.status(404).json({ error: "Admin profile not found" });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, targetAdmin.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: "Current password does not match. Please verify and try again." });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    if (getMongoStatus() && admin) {
+      admin.password = hashedPassword;
+      await admin.save();
+    }
+
+    if (fileAdminIndex !== -1) {
+      admins[fileAdminIndex].password = hashedPassword;
+      saveAdminsToFile(admins);
+    }
+
+    res.json({ message: "Password updated successfully! Please sign in with your new password next time." });
+  } catch (err) {
+    res.status(500).json({ error: "Error changing password: " + err.message });
   }
-
-  const admin = admins[adminIndex];
-  const isMatch = await bcrypt.compare(currentPassword, admin.password);
-
-  if (!isMatch) {
-    return res.status(400).json({ error: "Current password does not match. Please try again." });
-  }
-
-  // Hash new password and save
-  const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-  admins[adminIndex].password = hashedNewPassword;
-  admins[adminIndex].updatedAt = new Date().toISOString();
-  saveAdmins(admins);
-
-  res.json({ message: "Password updated successfully. Please use your new password next time." });
 });
 
 // -------------------- ENQUIRIES ROUTES --------------------
 
-app.get("/api/enquiries", (req, res) => {
-  let list = getEnquiries();
-  const { search, status, service, page = 1, limit = 5 } = req.query;
-
-  if (search) {
-    const q = search.toLowerCase();
-    list = list.filter(
-      (e) =>
-        e.name.toLowerCase().includes(q) ||
-        e.phone.toLowerCase().includes(q) ||
-        e.email.toLowerCase().includes(q) ||
-        (e.company && e.company.toLowerCase().includes(q))
-    );
-  }
-
-  if (status && status !== "All") {
-    list = list.filter((e) => e.status === status);
-  }
-
-  if (service && service !== "All") {
-    list = list.filter((e) => e.service === service);
-  }
-
-  const total = list.length;
-  const p = parseInt(page);
-  const l = parseInt(limit);
-  const startIndex = (p - 1) * l;
-  const paginated = list.slice(startIndex, startIndex + l);
-
-  res.json({
-    total,
-    page: p,
-    limit: l,
-    totalPages: Math.ceil(total / l),
-    data: paginated,
-    stats: {
-      totalCount: getEnquiries().length,
-      newCount: getEnquiries().filter((x) => x.status === "New").length,
-      inProgressCount: getEnquiries().filter((x) => x.status === "In Progress").length,
-      completedCount: getEnquiries().filter((x) => x.status === "Completed").length
+app.get("/api/enquiries", async (req, res) => {
+  try {
+    let list = [];
+    if (getMongoStatus()) {
+      list = await Enquiry.find().sort({ createdAt: -1 }).lean();
     }
-  });
+    if (list.length === 0) {
+      list = getEnquiriesFromFile();
+    }
+
+    const { status, service, search, page = 1, limit = 6 } = req.query;
+
+    let filtered = [...list];
+
+    if (status && status !== "All") {
+      filtered = filtered.filter((item) => item.status.toLowerCase() === status.toLowerCase());
+    }
+
+    if (service && service !== "All") {
+      filtered = filtered.filter((item) => item.service.toLowerCase() === service.toLowerCase());
+    }
+
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(
+        (item) =>
+          item.name?.toLowerCase().includes(q) ||
+          item.company?.toLowerCase().includes(q) ||
+          item.phone?.includes(q) ||
+          item.email?.toLowerCase().includes(q) ||
+          item.id?.toLowerCase().includes(q)
+      );
+    }
+
+    const total = filtered.length;
+    const startIndex = (parseInt(page) - 1) * parseInt(limit);
+    const paginated = filtered.slice(startIndex, startIndex + parseInt(limit));
+
+    res.json({
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / parseInt(limit)) || 1,
+      data: paginated,
+      stats: {
+        totalCount: list.length,
+        newCount: list.filter((x) => x.status === "New").length,
+        inProgressCount: list.filter((x) => x.status === "In Progress").length,
+        completedCount: list.filter((x) => x.status === "Completed").length
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Error fetching enquiries: " + err.message });
+  }
 });
 
-app.post("/api/enquiries", (req, res) => {
+app.post("/api/enquiries", async (req, res) => {
   const { name, company, phone, email, service, scope } = req.body;
   if (!name || !phone) {
     return res.status(400).json({ error: "Name and Phone are required" });
@@ -202,7 +252,6 @@ app.post("/api/enquiries", (req, res) => {
     utility: "Utility Infrastructure"
   };
 
-  const list = getEnquiries();
   const newEnq = {
     id: "ENQ-" + Math.floor(1000 + Math.random() * 9000),
     name,
@@ -216,40 +265,72 @@ app.post("/api/enquiries", (req, res) => {
     date: new Date().toISOString().replace("T", " ").substring(0, 16)
   };
 
-  list.unshift(newEnq);
-  saveEnquiries(list);
-  res.status(201).json({ message: "Enquiry submitted successfully", enquiry: newEnq });
+  try {
+    if (getMongoStatus()) {
+      await Enquiry.create(newEnq);
+    }
+
+    const list = getEnquiriesFromFile();
+    list.unshift(newEnq);
+    saveEnquiriesToFile(list);
+
+    res.status(201).json({ message: "Enquiry submitted successfully", enquiry: newEnq });
+  } catch (err) {
+    res.status(500).json({ error: "Error saving enquiry: " + err.message });
+  }
 });
 
-app.patch("/api/enquiries/:id/status", (req, res) => {
+app.patch("/api/enquiries/:id/status", async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  const list = getEnquiries();
-  const index = list.findIndex((e) => e.id === id);
 
-  if (index === -1) {
-    return res.status(404).json({ error: "Enquiry not found" });
+  try {
+    let updated = null;
+    if (getMongoStatus()) {
+      updated = await Enquiry.findOneAndUpdate({ id }, { status }, { new: true }).lean();
+    }
+
+    const list = getEnquiriesFromFile();
+    const index = list.findIndex((e) => e.id === id);
+    if (index !== -1) {
+      list[index].status = status;
+      saveEnquiriesToFile(list);
+      if (!updated) updated = list[index];
+    }
+
+    if (!updated) {
+      return res.status(404).json({ error: "Enquiry not found" });
+    }
+
+    res.json({ message: "Status updated successfully", enquiry: updated });
+  } catch (err) {
+    res.status(500).json({ error: "Error updating status: " + err.message });
   }
-
-  list[index].status = status;
-  saveEnquiries(list);
-  res.json({ message: "Status updated successfully", enquiry: list[index] });
 });
 
-app.delete("/api/enquiries/:id", (req, res) => {
+app.delete("/api/enquiries/:id", async (req, res) => {
   const { id } = req.params;
-  let list = getEnquiries();
-  const initialLength = list.length;
-  list = list.filter((e) => e.id !== id);
 
-  if (list.length === initialLength) {
-    return res.status(404).json({ error: "Enquiry not found" });
+  try {
+    if (getMongoStatus()) {
+      await Enquiry.findOneAndDelete({ id });
+    }
+
+    let list = getEnquiriesFromFile();
+    const initialLength = list.length;
+    list = list.filter((e) => e.id !== id);
+
+    if (list.length === initialLength && !getMongoStatus()) {
+      return res.status(404).json({ error: "Enquiry not found" });
+    }
+
+    saveEnquiriesToFile(list);
+    res.json({ message: "Enquiry deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ error: "Error deleting enquiry: " + err.message });
   }
-
-  saveEnquiries(list);
-  res.json({ message: "Enquiry deleted successfully" });
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Yashin FM Backend running on http://localhost:${PORT}`);
+  console.log(` Yashin FM Backend running on http://localhost:${PORT}`);
 });
