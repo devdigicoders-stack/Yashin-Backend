@@ -1,0 +1,20 @@
+[
+  {
+    "id": "ADM-01",
+    "username": "admin",
+    "email": "admin@yashin.qa",
+    "password": "$2b$10$pRbBHBoptRbNDUd6n6mDf.b80hxm6UY1DUEbTrooeIffWzS2MR67K",
+    "role": "Super Admin",
+    "createdAt": "2026-11-21T16:09:24.091Z",
+    "updatedAt": "2026-11-21T16:22:43.735Z"
+  },
+  {
+    "id": "ADM-1795277964823",
+    "username": "Yashin Admin",
+    "email": "admin@yashin.com",
+    "password": "$2b$10$nQCBJAHXmD.cOHTCn560ruc.yV6lGu1zlTSngBaLshUkOzTDy6G1y",
+    "role": "Super Admin",
+    "createdAt": "2026-11-21T16:19:24.823Z",
+    "updatedAt": "2026-11-21T16:27:56.390Z"
+  }
+]

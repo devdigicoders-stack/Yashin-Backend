@@ -1,0 +1,74 @@
+[
+  {
+    "id": "ENQ-9172",
+    "name": "Mayank Pandey",
+    "company": "Direct Client",
+    "phone": "+917549910025",
+    "email": "mp04042007@gmail.com",
+    "service": "mep",
+    "serviceName": "MEP & Substation Works",
+    "scope": "ws",
+    "status": "New",
+    "date": "2026-11-21 16:24"
+  },
+  {
+    "id": "ENQ-1001",
+    "name": "Ahmed Al-Kuwari",
+    "company": "Lusail Marina Tower",
+    "phone": "+974 5512 8899",
+    "email": "ahmed.kuwari@lusailmarina.qa",
+    "service": "mep",
+    "serviceName": "MEP & Substation Works",
+    "scope": "Urgent need for electrical panel board audit and chiller pump routine annual maintenance contract (AMC).",
+    "status": "New",
+    "date": "2026-11-21 14:30"
+  },
+  {
+    "id": "ENQ-1002",
+    "name": "Mohammad Rashid",
+    "company": "West Bay Commercial Plaza",
+    "phone": "+974 6645 2211",
+    "email": "rashid@westbayplaza.qa",
+    "service": "fire",
+    "serviceName": "Firefighting & Alarm Systems",
+    "scope": "Civil Defense compliance inspection required for 12-story commercial facility fire sprinkler and hydrant system.",
+    "status": "In Progress",
+    "date": "2026-11-20 10:15"
+  },
+  {
+    "id": "ENQ-1003",
+    "name": "Fahad Al-Sulaiti",
+    "company": "Doha Pearl Residences",
+    "phone": "+974 7789 4433",
+    "email": "fahad@pearlresidences.qa",
+    "service": "civil",
+    "serviceName": "Civil Works, Gypsum & Cladding",
+    "scope": "False ceiling installation and anti-slip epoxy floor screeding for parking basement level 2.",
+    "status": "Completed",
+    "date": "2026-11-19 16:45"
+  },
+  {
+    "id": "ENQ-1004",
+    "name": "Tariq Mansoor",
+    "company": "Al Wakrah Logistics Center",
+    "phone": "+974 3321 9900",
+    "email": "tariq@wakrahlogistics.com",
+    "service": "cleaning",
+    "serviceName": "Commercial & Residential Cleaning",
+    "scope": "Deep sanitization and facade window glass washing before handover of 3 industrial warehouse blocks.",
+    "status": "New",
+    "date": "2026-11-21 09:00"
+  },
+  {
+    "id": "ENQ-1005",
+    "name": "Salem Al-Hajri",
+    "company": "Al Rayyan Contracting Group",
+    "phone": "+974 5544 3322",
+    "email": "salem.hajri@rayyancontracting.com",
+    "service": "manpower",
+    "serviceName": "Manpower Supply",
+    "scope": "Require 15 certified MEP technicians and 10 skilled masons for immediate 6-month site deployment.",
+    "status": "In Progress",
+    "date": "2026-11-18 11:20"
+  }
+]
