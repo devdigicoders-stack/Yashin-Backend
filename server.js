@@ -13,8 +13,24 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "yashin_facilities_jwt_secret_key_2026";
 
-// Connect to MongoDB
-connectDB();
+// Connect to MongoDB and sync file admins
+connectDB().then(async () => {
+  if (getMongoStatus()) {
+    try {
+      const admins = getAdminsFromFile();
+      for (const a of admins) {
+        await Admin.findOneAndUpdate(
+          { $or: [{ username: a.username }, { email: a.email }] },
+          { username: a.username, email: a.email, password: a.password, role: a.role || "Super Admin" },
+          { upsert: true, new: true }
+        );
+      }
+      console.log(" Synced admin.json credentials to MongoDB.");
+    } catch (e) {
+      console.warn("⚠️ Admin sync to Mongo warning:", e.message);
+    }
+  }
+});
 
 app.use(cors());
 app.use(express.json());
@@ -73,23 +89,34 @@ function saveEnquiriesToFile(data) {
 
 // -------------------- AUTH & PROFILE ROUTES --------------------
 
-// 1. Admin Login
+// 1. Admin Login (Supports both Username and Email, case-insensitive)
 app.post("/api/admin/login", async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
-    return res.status(400).json({ error: "Username and password are required" });
+    return res.status(400).json({ error: "Username/Email and password are required" });
   }
+
+  const query = username.trim();
 
   try {
     let admin = null;
     if (getMongoStatus()) {
-      admin = await Admin.findOne({ username });
+      admin = await Admin.findOne({
+        $or: [
+          { username: new RegExp(`^${query}$`, "i") },
+          { email: new RegExp(`^${query}$`, "i") }
+        ]
+      });
     }
 
     if (!admin) {
       const admins = getAdminsFromFile();
-      admin = admins.find((a) => a.username.toLowerCase() === username.toLowerCase());
+      admin = admins.find(
+        (a) =>
+          (a.username && a.username.toLowerCase() === query.toLowerCase()) ||
+          (a.email && a.email.toLowerCase() === query.toLowerCase())
+      );
     }
 
     if (!admin) {
@@ -123,6 +150,7 @@ app.post("/api/admin/login", async (req, res) => {
       }
     });
   } catch (err) {
+    console.error("Login error:", err);
     res.status(500).json({ error: "Server error during login" });
   }
 });
